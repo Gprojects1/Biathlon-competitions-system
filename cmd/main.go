@@ -16,5 +16,5 @@ func main() {
 		os.Exit(1)
 	}
 	race := biathlon.NewPursuitRace(config, parsedEvents)
-	race.ProcessGame()
+	race.ProcessGame("results.txt")
 }

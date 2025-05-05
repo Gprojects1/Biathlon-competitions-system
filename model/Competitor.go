@@ -14,7 +14,7 @@ type Competitor struct {
 	CurrentRange     int
 	InPenalty        bool
 	Hits             []int
-	Shots            []int
+	Shots            int
 	LapTimes         []time.Duration
 	LapSpeeds        []float64
 	PenaltyTime      time.Duration

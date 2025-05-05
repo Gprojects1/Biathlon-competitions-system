@@ -5,6 +5,8 @@ import (
 	"Biathlon-competitions-system/model"
 	"Biathlon-competitions-system/utils"
 	"fmt"
+	"io"
+	"os"
 	"sort"
 	"time"
 )
@@ -28,13 +30,13 @@ func NewPursuitRace(cfg config.Config, events []model.Event) *PursuitRace {
 	}
 }
 
-func (purs *PursuitRace) ProcessGame() {
+func (purs *PursuitRace) ProcessGame(outputFile string) {
 	for _, event := range purs.events {
 		if _, exists := purs.competitors[event.CompetitorID]; !exists {
 			purs.competitors[event.CompetitorID] = &model.Competitor{
 				ID:        event.CompetitorID,
 				Hits:      make([]int, purs.config.FiringLines*purs.config.Laps),
-				Shots:     make([]int, purs.config.FiringLines*purs.config.Laps),
+				Shots:     purs.config.FiringLines * purs.config.Laps * 5,
 				LapTimes:  make([]time.Duration, 0),
 				LapSpeeds: make([]float64, 0),
 			}
@@ -78,7 +80,6 @@ func (purs *PursuitRace) ProcessGame() {
 		case 6:
 			var target int
 			fmt.Sscanf(event.ExtraParams, "%d", &target)
-			comp.Shots[comp.CurrentRange]++
 			comp.Hits[comp.CurrentRange]++
 			fmt.Printf("[%s] Участник %d поразил мишень %d на рубеже %d\n",
 				event.Time.Format("15:04:05.000"), comp.ID, target, comp.CurrentRange+1)
@@ -124,7 +125,15 @@ func (purs *PursuitRace) ProcessGame() {
 	}
 
 	purs.prepareResults()
-	purs.printResultsTable()
+
+	if outputFile != "" {
+		err := purs.SaveResultsToFile(outputFile)
+		if err != nil {
+			fmt.Printf("Ошибка сохранения результатов в файл: %v\n", err)
+		} else {
+			fmt.Printf("Результаты сохранены в файл: %s\n", outputFile)
+		}
+	}
 }
 
 func (purs *PursuitRace) prepareResults() {
@@ -155,10 +164,9 @@ func (purs *PursuitRace) prepareResults() {
 		}
 
 		totalHits := 0
-		totalShots := 0
+		totalShots := comp.Shots
 		for i := range comp.Hits {
 			totalHits += comp.Hits[i]
-			totalShots += comp.Shots[i]
 		}
 		result.HitRate = fmt.Sprintf("%d/%d", totalHits, totalShots)
 
@@ -180,30 +188,48 @@ func (purs *PursuitRace) prepareResults() {
 	})
 }
 
-func (purs *PursuitRace) printResultsTable() {
-	fmt.Println("\nИтоговые результаты:")
-	fmt.Println("----------------------------------------------------------------------------------------------------------")
-	fmt.Println("| ID | Статус       | Общее время | Попадания | Круги (время/скорость)         | Штрафные круги          |")
-	fmt.Println("----------------------------------------------------------------------------------------------------------")
-
-	for _, res := range purs.results {
-		lapsInfo := ""
-		for i := 0; i < len(res.LapTimes); i++ {
-			if i > 0 {
-				lapsInfo += ", "
-			}
-			lapsInfo += fmt.Sprintf("%s (%.1f м/с)", res.LapTimes[i], res.LapSpeeds[i])
-		}
-
-		penaltyInfo := ""
-		if res.PenaltyTime != "" {
-			penaltyInfo = fmt.Sprintf("%s (%.1f м/с)", res.PenaltyTime, res.PenaltySpeed)
-		} else {
-			penaltyInfo = "Нет"
-		}
-
-		fmt.Printf("| %2d | %-12s | %-12s | %-9s | %-30s | %-20s |\n",
-			res.ID, res.Status, res.TotalTime, res.HitRate, lapsInfo, penaltyInfo)
+func (purs *PursuitRace) printResultsTable(writers ...io.Writer) {
+	if len(writers) == 0 {
+		writers = []io.Writer{os.Stdout}
 	}
-	fmt.Println("----------------------------------------------------------------------------------------------------------")
+
+	for _, w := range writers {
+		fmt.Fprintln(w, "\nИтоговые результаты:")
+		fmt.Fprintln(w, "----------------------------------------------------------------------------------------------------------")
+		fmt.Fprintln(w, "| ID | Статус       | Общее время | Попадания | Круги (время/скорость)         | Штрафные круги          |")
+		fmt.Fprintln(w, "----------------------------------------------------------------------------------------------------------")
+
+		for _, res := range purs.results {
+			lapsInfo := ""
+			for i := 0; i < len(res.LapTimes); i++ {
+				if i > 0 {
+					lapsInfo += ", "
+				}
+				lapsInfo += fmt.Sprintf("%s (%.1f м/с)", res.LapTimes[i], res.LapSpeeds[i])
+			}
+
+			penaltyInfo := ""
+			if res.PenaltyTime != "" {
+				penaltyInfo = fmt.Sprintf("%s (%.1f м/с)", res.PenaltyTime, res.PenaltySpeed)
+			} else {
+				penaltyInfo = "Нет"
+			}
+
+			fmt.Fprintf(w, "| %2d | %-12s | %-12s | %-9s | %-30s | %-20s |\n",
+				res.ID, res.Status, res.TotalTime, res.HitRate, lapsInfo, penaltyInfo)
+		}
+
+		fmt.Fprintln(w, "----------------------------------------------------------------------------------------------------------")
+	}
+}
+
+func (purs *PursuitRace) SaveResultsToFile(filename string) error {
+	file, err := os.Create(filename)
+	if err != nil {
+		return fmt.Errorf("ошибка создания файла: %v", err)
+	}
+	defer file.Close()
+
+	purs.printResultsTable(os.Stdout, file)
+	return nil
 }
