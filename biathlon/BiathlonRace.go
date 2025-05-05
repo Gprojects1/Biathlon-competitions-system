@@ -12,7 +12,7 @@ import (
 )
 
 type BiathlonRace interface {
-	ProcessGame()
+	ProcessGame(outputFile string)
 }
 
 type PursuitRace struct {
